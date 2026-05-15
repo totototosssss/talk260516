@@ -1,108 +1,642 @@
-import re
-import json
-import random
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>発言クイズ</title>
 
-input_file = "[LINE] Chat in 高IQの高IQによる高IQのための部屋.txt"
-output_file = "quiz.json"
-
-name_mapping = {
-    "○高顔面中知能低身長": "管理人",
-    "今日はブラック！": "脱獄イカ",
-    "脱獄イカ": "脱獄イカ",
-    "みもずり": "ささみ",
-    "みみささぐ": "ささみ",
-    "いながきごろう": "いながきごろう",
-    "いながきごろう　": "いながきごろう",
-    "◇ﾌﾘｺﾋ": "フリカフィ",
-    "フリカフィ": "フリカフィ",
-    "躁動なフリカフィ": "フリカフィ",
-    "○ロイコ": "○ロイコ",
-    "ぱつ": "ぱつ",
-    "_✩⃝めめ": "めめ",
-    "☆めめ": "めめ",
-    "おにちろ": "おにちろ",
-    "闇鬼ちろ": "おにちろ",
-    "おにせちろるど": "おにちろ",
-    "復活のちろ": "おにちろ",
-    "じゃくちろ2026/5/15禁煙": "おにちろ",
-    "🦪やどん": "なんく",
-    "オーラ見えます": "ゆーまる",
-    "久石奏(才能100%)": "久石奏",
+<style>
+* {
+  box-sizing: border-box;
 }
 
-def clean_name(raw_name):
-    clean_key = raw_name.strip()
-    if clean_key in name_mapping:
-        return name_mapping[clean_key]
-    for key in name_mapping:
-        if key in raw_name:
-            return name_mapping[key]
-    return None
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #f5f5f5;
+  color: #222;
+}
 
-def is_valid_message(message):
-    invalid_keywords = [
-        "ライブトーク", "[スタンプ]", "[Sticker]", "[写真]", "[Photo]",
-        "[動画]", "[Video]", "[ファイル]", "http://", "https://",
-        "送信取消", "unsent a message", "クイズ"
-    ]
-    if any(keyword in message for keyword in invalid_keywords):
-        return False
-    if len(message.replace('\n', '').replace(' ', '').replace('　', '')) < 12:
-        return False
-    return True
+.wrap {
+  max-width: 640px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: 16px;
+  display: flex;
+  align-items: center;
+}
 
-valid_messages = []
-current_user = None
-current_message = []
+.card {
+  width: 100%;
+  background: #fff;
+  border-radius: 18px;
+  padding: 20px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+}
 
-with open(input_file, 'r', encoding='utf-8') as f:
-    for line in f:
-        line = line.strip()
-        if not line:
-            continue
-            
-        parts = line.split('\t')
-        if len(parts) >= 3 and re.match(r'\d{1,2}:\d{2}', parts[0]):
-            if current_user and current_message:
-                msg_text = '\n'.join(current_message)
-                cleaned = clean_name(current_user)
-                if cleaned and is_valid_message(msg_text):
-                    valid_messages.append((cleaned, msg_text))
-            
-            current_user = parts[1]
-            current_message = [parts[2]] if len(parts) > 2 else []
-        else:
-            if current_user:
-                current_message.append(line)
+.hidden {
+  display: none;
+}
 
-if current_user and current_message:
-    msg_text = '\n'.join(current_message)
-    cleaned = clean_name(current_user)
-    if cleaned and is_valid_message(msg_text):
-        valid_messages.append((cleaned, msg_text))
+h1, h2 {
+  margin: 0 0 16px;
+}
 
-names = list(set([m[0] for m in valid_messages]))
-if len(names) < 4:
-    raise ValueError("クイズ作成には最低4人の参加者が必要です。")
+p {
+  line-height: 1.6;
+}
 
-quiz_data = []
-selected_messages = random.sample(valid_messages, min(30, len(valid_messages)))
+input, button {
+  width: 100%;
+  font-size: 16px;
+  border-radius: 12px;
+  padding: 14px;
+  margin: 7px 0;
+}
 
-for name, msg in selected_messages:
-    options = [name]
-    while len(options) < 4:
-        wrong_name = random.choice(names)
-        if wrong_name not in options:
-            options.append(wrong_name)
-    
-    random.shuffle(options)
-    answer_idx = options.index(name)
-    
-    quiz_data.append({
-        "question": f"「{msg}」\n\nこの発言をしたのは誰？",
-        "options": options,
-        "answer": answer_idx
-    })
+input {
+  border: 1px solid #ccc;
+}
 
-with open(output_file, 'w', encoding='utf-8') as f:
-    json.dump(quiz_data, f, ensure_ascii=False, indent=2)
+button {
+  border: none;
+  background: #222;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+}
+
+.sub {
+  background: #eee;
+  color: #222;
+}
+
+.question {
+  white-space: pre-wrap;
+  font-size: 19px;
+  line-height: 1.7;
+  background: #f7f7f7;
+  border-radius: 14px;
+  padding: 16px;
+  margin: 16px 0;
+}
+
+.option {
+  background: #f0f0f0;
+  color: #222;
+  text-align: left;
+  min-height: 56px;
+}
+
+.option.correct {
+  background: #c8f7c5;
+}
+
+.option.wrong {
+  background: #ffc9c9;
+}
+
+.top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.badge {
+  background: #eee;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  border-bottom: 1px solid #eee;
+  padding: 9px 0;
+}
+
+.small {
+  color: #666;
+  font-size: 13px;
+}
+</style>
+</head>
+
+<body>
+<div class="wrap">
+
+  <div class="card" id="login">
+    <h1>発言クイズ</h1>
+    <input id="nameInput" placeholder="名前">
+    <input id="roomInput" placeholder="合言葉">
+    <button id="joinBtn">入室</button>
+    <p class="small">同じ合言葉の人と対戦できます。10問、各7秒です。</p>
+    <p class="small" id="status"></p>
+  </div>
+
+  <div class="card hidden" id="lobby">
+    <h2>待機室</h2>
+    <p class="small">Room: <b id="roomLabel"></b></p>
+    <div id="players"></div>
+    <button id="startBtn">開始</button>
+    <button class="sub" id="resetBtn">リセット</button>
+  </div>
+
+  <div class="card hidden" id="game">
+    <div class="top">
+      <div class="badge" id="countLabel">1 / 10</div>
+      <div class="badge">残り <span id="timeLabel">7.0</span> 秒</div>
+    </div>
+
+    <div class="question" id="questionText"></div>
+    <div id="options"></div>
+
+    <p class="small" id="answerInfo"></p>
+
+    <h2 style="margin-top:20px;">スコア</h2>
+    <div id="scores"></div>
+  </div>
+
+  <div class="card hidden" id="result">
+    <h2>結果</h2>
+    <div id="resultBoard"></div>
+    <button onclick="location.reload()">戻る</button>
+  </div>
+
+</div>
+
+<script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+
+<script>
+const BROKER = "wss://broker.emqx.io:8084/mqtt";
+const QUIZ_FILE = "quiz_data.json";
+
+const QUESTION_COUNT = 10;
+const TIME_LIMIT = 7;
+const SHOW_ANSWER_TIME = 2;
+
+let quizRaw = [];
+let quiz = [];
+
+let playerId = localStorage.getItem("quiz_player_id");
+if (!playerId) {
+  playerId = crypto.randomUUID();
+  localStorage.setItem("quiz_player_id", playerId);
+}
+
+let playerName = "";
+let roomId = "";
+let client = null;
+
+let baseTopic = "";
+let stateTopic = "";
+let eventTopic = "";
+let playerTopic = "";
+
+let players = {};
+
+let state = {
+  mode: "lobby",
+  hostId: null,
+  qids: [],
+  index: 0,
+  phase: "lobby",
+  startedAt: 0,
+  answers: {},
+  scores: {}
+};
+
+function $(id) {
+  return document.getElementById(id);
+}
+
+function show(id) {
+  ["login", "lobby", "game", "result"].forEach(x => $(x).classList.add("hidden"));
+  $(id).classList.remove("hidden");
+}
+
+function shuffle(a) {
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+}
+
+function sanitizeRoom(s) {
+  return s.trim().replace(/[^\w\-ぁ-んァ-ヶ一-龠]/g, "_").slice(0, 64);
+}
+
+function publish(topic, data, retain=false) {
+  if (!client || !client.connected) return;
+  client.publish(topic, JSON.stringify(data), { qos: 1, retain });
+}
+
+function publishState() {
+  publish(stateTopic, state, true);
+}
+
+function publishPlayer() {
+  publish(`${playerTopic}/${playerId}`, {
+    id: playerId,
+    name: playerName,
+    joinedAt: Date.now()
+  }, true);
+}
+
+function publishEvent(data) {
+  publish(eventTopic, {
+    ...data,
+    from: playerId,
+    time: Date.now()
+  });
+}
+
+async function loadQuiz() {
+  const res = await fetch(QUIZ_FILE, { cache: "no-store" });
+  if (!res.ok) throw new Error("quiz_data.json を読み込めません");
+
+  quizRaw = await res.json();
+
+  quizRaw = quizRaw.filter(x =>
+    x &&
+    typeof x.name === "string" &&
+    typeof x.text === "string" &&
+    x.name.trim() &&
+    x.text.trim()
+  );
+
+  const names = [...new Set(quizRaw.map(x => x.name))];
+
+  if (names.length < 4) {
+    throw new Error("選択肢生成には最低4人必要です");
+  }
+
+  if (quizRaw.length < QUESTION_COUNT) {
+    throw new Error("問題候補が10個以上必要です");
+  }
+
+  quiz = quizRaw.map(item => {
+    const correct = item.name;
+    const wrongs = names.filter(n => n !== correct);
+    shuffle(wrongs);
+
+    const options = [correct, ...wrongs.slice(0, 3)];
+    shuffle(options);
+
+    return {
+      text: item.text,
+      answerName: correct,
+      options,
+      answer: options.indexOf(correct)
+    };
+  });
+}
+
+function chooseQuestions() {
+  const ids = [...Array(quiz.length).keys()];
+  shuffle(ids);
+  return ids.slice(0, QUESTION_COUNT);
+}
+
+function currentQuestion() {
+  return quiz[state.qids[state.index]];
+}
+
+function scoreOf(id) {
+  return state.scores?.[id] ?? 0;
+}
+
+function isHost() {
+  return state.hostId === playerId;
+}
+
+function renderLobby() {
+  $("roomLabel").textContent = roomId;
+  $("players").innerHTML = "";
+
+  Object.values(players)
+    .sort((a, b) => (a.joinedAt ?? 0) - (b.joinedAt ?? 0))
+    .forEach(p => {
+      const div = document.createElement("div");
+      div.className = "row";
+      div.innerHTML = `
+        <span>${p.name}${p.id === playerId ? "（自分）" : ""}</span>
+        <span>${scoreOf(p.id)}点</span>
+      `;
+      $("players").appendChild(div);
+    });
+
+  show("lobby");
+}
+
+function renderGame() {
+  if (state.index >= QUESTION_COUNT || state.mode === "finished") {
+    renderResult();
+    return;
+  }
+
+  const q = currentQuestion();
+  const myAnswer = state.answers?.[playerId];
+
+  $("countLabel").textContent = `${state.index + 1} / ${QUESTION_COUNT}`;
+  $("questionText").textContent = `「${q.text}」\n\nこの発言をしたのは誰？`;
+  $("options").innerHTML = "";
+
+  q.options.forEach((op, i) => {
+    const btn = document.createElement("button");
+    btn.className = "option";
+    btn.textContent = op;
+
+    const revealed = state.phase === "reveal";
+
+    if (revealed && i === q.answer) {
+      btn.classList.add("correct");
+    }
+
+    if (revealed && myAnswer && i === myAnswer.selected && i !== q.answer) {
+      btn.classList.add("wrong");
+    }
+
+    btn.disabled = state.phase !== "answer" || !!myAnswer;
+
+    btn.onclick = () => answer(i);
+
+    $("options").appendChild(btn);
+  });
+
+  if (state.phase === "answer") {
+    $("answerInfo").textContent = myAnswer ? "回答済みです。" : "選択肢を選んでください。";
+  } else {
+    if (!myAnswer) {
+      $("answerInfo").textContent = `未回答。正解は ${q.answerName}`;
+    } else if (myAnswer.correct) {
+      $("answerInfo").textContent = "正解！ +1点";
+    } else {
+      $("answerInfo").textContent = `不正解。正解は ${q.answerName}`;
+    }
+  }
+
+  renderScores();
+  show("game");
+}
+
+function renderScores() {
+  $("scores").innerHTML = "";
+
+  Object.values(players)
+    .sort((a, b) => scoreOf(b.id) - scoreOf(a.id))
+    .forEach(p => {
+      const div = document.createElement("div");
+      div.className = "row";
+      div.innerHTML = `
+        <span>${p.name}${p.id === playerId ? "（自分）" : ""}</span>
+        <span>${scoreOf(p.id)}点 ${state.answers?.[p.id] ? "✓" : ""}</span>
+      `;
+      $("scores").appendChild(div);
+    });
+}
+
+function renderResult() {
+  $("resultBoard").innerHTML = "";
+
+  Object.values(players)
+    .sort((a, b) => scoreOf(b.id) - scoreOf(a.id))
+    .forEach((p, i) => {
+      const div = document.createElement("div");
+      div.className = "row";
+      div.innerHTML = `
+        <span>${i + 1}位 ${p.name}</span>
+        <span>${scoreOf(p.id)}点</span>
+      `;
+      $("resultBoard").appendChild(div);
+    });
+
+  show("result");
+}
+
+function answer(selected) {
+  if (state.phase !== "answer") return;
+  if (state.answers?.[playerId]) return;
+
+  const q = currentQuestion();
+  const correct = selected === q.answer;
+
+  publishEvent({
+    type: "answer",
+    index: state.index,
+    selected,
+    correct
+  });
+
+  state.answers[playerId] = { selected, correct };
+  renderGame();
+}
+
+function startGame() {
+  state = {
+    mode: "playing",
+    hostId: playerId,
+    qids: chooseQuestions(),
+    index: 0,
+    phase: "answer",
+    startedAt: Date.now(),
+    answers: {},
+    scores: {}
+  };
+
+  Object.keys(players).forEach(id => {
+    state.scores[id] = 0;
+  });
+
+  publishState();
+  renderGame();
+}
+
+function resetRoom() {
+  state = {
+    mode: "lobby",
+    hostId: null,
+    qids: [],
+    index: 0,
+    phase: "lobby",
+    startedAt: 0,
+    answers: {},
+    scores: {}
+  };
+
+  publishState();
+  renderLobby();
+}
+
+function tick() {
+  if (state.mode !== "playing") return;
+
+  const now = Date.now();
+  const elapsed = (now - state.startedAt) / 1000;
+
+  if (state.phase === "answer") {
+    const remain = Math.max(0, TIME_LIMIT - elapsed);
+    $("timeLabel").textContent = remain.toFixed(1);
+
+    if (isHost() && remain <= 0) {
+      state.phase = "reveal";
+      state.startedAt = Date.now();
+      publishState();
+      renderGame();
+    }
+  }
+
+  if (state.phase === "reveal") {
+    const remain = Math.max(0, SHOW_ANSWER_TIME - elapsed);
+    $("timeLabel").textContent = remain.toFixed(1);
+
+    if (isHost() && remain <= 0) {
+      if (state.index + 1 >= QUESTION_COUNT) {
+        state.mode = "finished";
+        state.phase = "finished";
+        publishState();
+        renderResult();
+      } else {
+        state.index++;
+        state.phase = "answer";
+        state.startedAt = Date.now();
+        state.answers = {};
+        publishState();
+        renderGame();
+      }
+    }
+  }
+}
+
+function handleEvent(ev) {
+  if (!ev || ev.type !== "answer") return;
+  if (!isHost()) return;
+  if (state.mode !== "playing") return;
+  if (state.phase !== "answer") return;
+  if (ev.index !== state.index) return;
+  if (state.answers[ev.from]) return;
+
+  state.answers[ev.from] = {
+    selected: ev.selected,
+    correct: ev.correct
+  };
+
+  if (ev.correct) {
+    state.scores[ev.from] = (state.scores[ev.from] ?? 0) + 1;
+  }
+
+  publishState();
+  renderGame();
+}
+
+function handleState(s) {
+  if (!s || !s.mode) return;
+
+  state = s;
+
+  if (state.mode === "lobby") {
+    renderLobby();
+  } else if (state.mode === "playing") {
+    renderGame();
+  } else if (state.mode === "finished") {
+    renderResult();
+  }
+}
+
+function handlePlayer(data) {
+  if (!data || !data.id || !data.name) return;
+
+  players[data.id] = data;
+
+  if (state.mode === "lobby") renderLobby();
+  else renderScores();
+}
+
+$("joinBtn").onclick = async () => {
+  playerName = $("nameInput").value.trim();
+  roomId = sanitizeRoom($("roomInput").value);
+
+  if (!playerName) {
+    alert("名前を入力してください");
+    return;
+  }
+
+  if (!roomId) {
+    alert("合言葉を入力してください");
+    return;
+  }
+
+  try {
+    $("status").textContent = "読み込み中...";
+    await loadQuiz();
+  } catch (e) {
+    $("status").textContent = e.message;
+    return;
+  }
+
+  baseTopic = `chat-quiz-simple/${roomId}`;
+  stateTopic = `${baseTopic}/state`;
+  eventTopic = `${baseTopic}/event`;
+  playerTopic = `${baseTopic}/players`;
+
+  $("status").textContent = "接続中...";
+
+  client = mqtt.connect(BROKER, {
+    clientId: `quiz_${playerId}_${Math.random().toString(16).slice(2)}`,
+    clean: true,
+    reconnectPeriod: 2000,
+    connectTimeout: 5000
+  });
+
+  client.on("connect", () => {
+    client.subscribe(stateTopic);
+    client.subscribe(eventTopic);
+    client.subscribe(`${playerTopic}/+`);
+
+    players[playerId] = {
+      id: playerId,
+      name: playerName,
+      joinedAt: Date.now()
+    };
+
+    publishPlayer();
+    renderLobby();
+
+    setInterval(tick, 100);
+  });
+
+  client.on("message", (topic, payload) => {
+    let data;
+
+    try {
+      data = JSON.parse(payload.toString());
+    } catch {
+      return;
+    }
+
+    if (topic === stateTopic) {
+      handleState(data);
+    } else if (topic === eventTopic) {
+      handleEvent(data);
+    } else if (topic.startsWith(playerTopic)) {
+      handlePlayer(data);
+    }
+  });
+
+  client.on("error", () => {
+    $("status").textContent = "接続エラー";
+  });
+};
+
+$("startBtn").onclick = startGame;
+$("resetBtn").onclick = resetRoom;
+</script>
+</body>
+</html>
