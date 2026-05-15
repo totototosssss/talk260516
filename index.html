@@ -1,0 +1,108 @@
+import re
+import json
+import random
+
+input_file = "[LINE] Chat in 高IQの高IQによる高IQのための部屋.txt"
+output_file = "quiz.json"
+
+name_mapping = {
+    "○高顔面中知能低身長": "管理人",
+    "今日はブラック！": "脱獄イカ",
+    "脱獄イカ": "脱獄イカ",
+    "みもずり": "ささみ",
+    "みみささぐ": "ささみ",
+    "いながきごろう": "いながきごろう",
+    "いながきごろう　": "いながきごろう",
+    "◇ﾌﾘｺﾋ": "フリカフィ",
+    "フリカフィ": "フリカフィ",
+    "躁動なフリカフィ": "フリカフィ",
+    "○ロイコ": "○ロイコ",
+    "ぱつ": "ぱつ",
+    "_✩⃝めめ": "めめ",
+    "☆めめ": "めめ",
+    "おにちろ": "おにちろ",
+    "闇鬼ちろ": "おにちろ",
+    "おにせちろるど": "おにちろ",
+    "復活のちろ": "おにちろ",
+    "じゃくちろ2026/5/15禁煙": "おにちろ",
+    "🦪やどん": "なんく",
+    "オーラ見えます": "ゆーまる",
+    "久石奏(才能100%)": "久石奏",
+}
+
+def clean_name(raw_name):
+    clean_key = raw_name.strip()
+    if clean_key in name_mapping:
+        return name_mapping[clean_key]
+    for key in name_mapping:
+        if key in raw_name:
+            return name_mapping[key]
+    return None
+
+def is_valid_message(message):
+    invalid_keywords = [
+        "ライブトーク", "[スタンプ]", "[Sticker]", "[写真]", "[Photo]",
+        "[動画]", "[Video]", "[ファイル]", "http://", "https://",
+        "送信取消", "unsent a message", "クイズ"
+    ]
+    if any(keyword in message for keyword in invalid_keywords):
+        return False
+    if len(message.replace('\n', '').replace(' ', '').replace('　', '')) < 12:
+        return False
+    return True
+
+valid_messages = []
+current_user = None
+current_message = []
+
+with open(input_file, 'r', encoding='utf-8') as f:
+    for line in f:
+        line = line.strip()
+        if not line:
+            continue
+            
+        parts = line.split('\t')
+        if len(parts) >= 3 and re.match(r'\d{1,2}:\d{2}', parts[0]):
+            if current_user and current_message:
+                msg_text = '\n'.join(current_message)
+                cleaned = clean_name(current_user)
+                if cleaned and is_valid_message(msg_text):
+                    valid_messages.append((cleaned, msg_text))
+            
+            current_user = parts[1]
+            current_message = [parts[2]] if len(parts) > 2 else []
+        else:
+            if current_user:
+                current_message.append(line)
+
+if current_user and current_message:
+    msg_text = '\n'.join(current_message)
+    cleaned = clean_name(current_user)
+    if cleaned and is_valid_message(msg_text):
+        valid_messages.append((cleaned, msg_text))
+
+names = list(set([m[0] for m in valid_messages]))
+if len(names) < 4:
+    raise ValueError("クイズ作成には最低4人の参加者が必要です。")
+
+quiz_data = []
+selected_messages = random.sample(valid_messages, min(30, len(valid_messages)))
+
+for name, msg in selected_messages:
+    options = [name]
+    while len(options) < 4:
+        wrong_name = random.choice(names)
+        if wrong_name not in options:
+            options.append(wrong_name)
+    
+    random.shuffle(options)
+    answer_idx = options.index(name)
+    
+    quiz_data.append({
+        "question": f"「{msg}」\n\nこの発言をしたのは誰？",
+        "options": options,
+        "answer": answer_idx
+    })
+
+with open(output_file, 'w', encoding='utf-8') as f:
+    json.dump(quiz_data, f, ensure_ascii=False, indent=2)
