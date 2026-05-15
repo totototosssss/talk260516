@@ -18,17 +18,17 @@ body {
 }
 
 .wrap {
-  max-width: 640px;
+  max-width: 680px;
   min-height: 100dvh;
   margin: 0 auto;
-  padding: 16px;
+  padding: 14px;
   display: flex;
   align-items: center;
 }
 
 .card {
   width: 100%;
-  background: #fff;
+  background: white;
   border-radius: 18px;
   padding: 20px;
   box-shadow: 0 6px 18px rgba(0,0,0,0.08);
@@ -38,8 +38,8 @@ body {
   display: none;
 }
 
-h1, h2 {
-  margin: 0 0 16px;
+h1, h2, h3 {
+  margin: 0 0 14px;
 }
 
 p {
@@ -68,6 +68,7 @@ button {
 
 button:disabled {
   opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .sub {
@@ -75,22 +76,36 @@ button:disabled {
   color: #222;
 }
 
+.mode {
+  background: #f0f0f0;
+  color: #222;
+}
+
+.mode.selected {
+  background: #222;
+  color: white;
+}
+
 .question {
   white-space: pre-wrap;
-  font-size: 19px;
+  font-size: 18px;
   line-height: 1.7;
   background: #f7f7f7;
   border-radius: 14px;
   padding: 16px;
-  margin: 16px 0;
+  margin: 14px 0;
 }
 
 .option {
   background: #f0f0f0;
   color: #222;
   text-align: left;
-  min-height: 48px;
+  min-height: 46px;
   padding: 11px 14px;
+}
+
+.option.selected {
+  outline: 3px solid #222;
 }
 
 .option.correct {
@@ -134,9 +149,34 @@ button:disabled {
 }
 
 #options {
-  max-height: 48dvh;
+  max-height: 45dvh;
   overflow-y: auto;
   padding-right: 2px;
+}
+
+.result-item {
+  border: 1px solid #eee;
+  border-radius: 12px;
+  padding: 12px;
+  margin: 10px 0;
+  background: #fafafa;
+}
+
+.result-question {
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+.correct-text {
+  color: #16803a;
+  font-weight: bold;
+}
+
+.wrong-text {
+  color: #c62828;
+  font-weight: bold;
 }
 
 @media (max-width: 480px) {
@@ -170,11 +210,11 @@ button:disabled {
 
   .option {
     font-size: 15px;
-    min-height: 46px;
+    min-height: 44px;
   }
 
   #options {
-    max-height: 45dvh;
+    max-height: 42dvh;
   }
 }
 </style>
@@ -185,19 +225,36 @@ button:disabled {
 
   <div class="card" id="login">
     <h1>発言クイズ</h1>
+
+    <button class="mode selected" id="soloModeBtn">一人で遊ぶ</button>
+    <button class="mode" id="battleModeBtn">二人で対戦する</button>
+
     <input id="nameInput" placeholder="名前">
-    <input id="roomInput" placeholder="合言葉">
-    <button id="joinBtn">入室</button>
-    <p class="small">同じ合言葉の人と対戦できます。10問、各7秒です。</p>
+    <input id="roomInput" placeholder="合言葉" class="hidden">
+
+    <button id="joinBtn">開始</button>
+
+    <p class="small">
+      一人用：回答後すぐ次の問題へ進めます。<br>
+      対戦用：同じ合言葉の人と同じ問題で勝負します。10問、各7秒です。
+    </p>
+
     <p class="small" id="status"></p>
   </div>
 
   <div class="card hidden" id="lobby">
     <h2>待機室</h2>
     <p class="small">Room: <b id="roomLabel"></b></p>
+
+    <h3>参加者</h3>
     <div id="players"></div>
+
     <button id="startBtn">開始</button>
     <button class="sub" id="resetBtn">リセット</button>
+
+    <p class="small">
+      参加者がそろったら開始してください。開始した人が進行役になります。
+    </p>
   </div>
 
   <div class="card hidden" id="game">
@@ -211,6 +268,8 @@ button:disabled {
 
     <p class="small" id="answerInfo"></p>
 
+    <button id="nextBtn" class="hidden">次の問題へ</button>
+
     <h2 style="margin-top:20px;">スコア</h2>
     <div id="scores"></div>
   </div>
@@ -218,6 +277,10 @@ button:disabled {
   <div class="card hidden" id="result">
     <h2>結果</h2>
     <div id="resultBoard"></div>
+
+    <h2 style="margin-top:20px;">正誤一覧</h2>
+    <div id="reviewBoard"></div>
+
     <button onclick="location.reload()">戻る</button>
   </div>
 
@@ -231,10 +294,20 @@ const QUIZ_FILE = "quiz_data.json";
 
 const QUESTION_COUNT = 10;
 const TIME_LIMIT = 7;
-const SHOW_ANSWER_TIME = 2;
+
+let mode = "solo";
 
 let quizRaw = [];
-let quiz = [];
+let names = [];
+
+let solo = {
+  qids: [],
+  index: 0,
+  phase: "answer",
+  startedAt: 0,
+  score: 0,
+  answers: []
+};
 
 let playerId = localStorage.getItem("quiz_player_id");
 if (!playerId) {
@@ -256,13 +329,16 @@ let players = {};
 let state = {
   mode: "lobby",
   hostId: null,
-  qids: [],
+  rounds: [],
   index: 0,
   phase: "lobby",
   startedAt: 0,
   answers: {},
-  scores: {}
+  scores: {},
+  history: []
 };
+
+let tickStarted = false;
 
 function $(id) {
   return document.getElementById(id);
@@ -298,11 +374,86 @@ function escapeHtml(s) {
     .replaceAll("'", "&#039;");
 }
 
+async function loadQuiz() {
+  const res = await fetch(QUIZ_FILE, { cache: "no-store" });
+
+  if (!res.ok) {
+    throw new Error("quiz_data.json を読み込めません");
+  }
+
+  quizRaw = await res.json();
+
+  quizRaw = quizRaw.filter(x =>
+    x &&
+    typeof x.name === "string" &&
+    typeof x.text === "string" &&
+    x.name.trim() &&
+    x.text.trim()
+  ).map(x => ({
+    name: x.name.trim(),
+    text: x.text.trim()
+  }));
+
+  names = [...new Set(quizRaw.map(x => x.name))];
+
+  if (names.length < 2) {
+    throw new Error("選択肢生成には最低2人必要です");
+  }
+
+  if (quizRaw.length < QUESTION_COUNT) {
+    throw new Error("問題候補が10個以上必要です");
+  }
+}
+
+function makeRounds() {
+  const ids = [...Array(quizRaw.length).keys()];
+  shuffle(ids);
+
+  return ids.slice(0, QUESTION_COUNT).map(id => {
+    const options = [...names];
+    shuffle(options);
+
+    return {
+      qid: id,
+      options: options
+    };
+  });
+}
+
+function getQuestionFromRound(round) {
+  const item = quizRaw[round.qid];
+  const correctName = item.name;
+  const answerIndex = round.options.indexOf(correctName);
+
+  return {
+    text: item.text,
+    answerName: correctName,
+    options: round.options,
+    answer: answerIndex
+  };
+}
+
+function currentSoloQuestion() {
+  return getQuestionFromRound(solo.qids[solo.index]);
+}
+
+function currentBattleQuestion() {
+  return getQuestionFromRound(state.rounds[state.index]);
+}
+
 function publish(topic, data, retain = false) {
   if (!client || !client.connected) return;
   client.publish(topic, JSON.stringify(data), {
     qos: 1,
     retain: retain
+  });
+}
+
+function publishEmpty(topic) {
+  if (!client || !client.connected) return;
+  client.publish(topic, "", {
+    qos: 1,
+    retain: true
   });
 }
 
@@ -324,58 +475,6 @@ function publishEvent(data) {
     from: playerId,
     time: Date.now()
   }, false);
-}
-
-async function loadQuiz() {
-  const res = await fetch(QUIZ_FILE, { cache: "no-store" });
-
-  if (!res.ok) {
-    throw new Error("quiz_data.json を読み込めません");
-  }
-
-  quizRaw = await res.json();
-
-  quizRaw = quizRaw.filter(x =>
-    x &&
-    typeof x.name === "string" &&
-    typeof x.text === "string" &&
-    x.name.trim() &&
-    x.text.trim()
-  );
-
-  const names = [...new Set(quizRaw.map(x => x.name.trim()))];
-
-  if (names.length < 2) {
-    throw new Error("選択肢生成には最低2人必要です");
-  }
-
-  if (quizRaw.length < QUESTION_COUNT) {
-    throw new Error("問題候補が10個以上必要です");
-  }
-
-  quiz = quizRaw.map(item => {
-    const correct = item.name.trim();
-
-    const options = [...names];
-    shuffle(options);
-
-    return {
-      text: item.text.trim(),
-      answerName: correct,
-      options: options,
-      answer: options.indexOf(correct)
-    };
-  });
-}
-
-function chooseQuestions() {
-  const ids = [...Array(quiz.length).keys()];
-  shuffle(ids);
-  return ids.slice(0, QUESTION_COUNT);
-}
-
-function currentQuestion() {
-  return quiz[state.qids[state.index]];
 }
 
 function scoreOf(id) {
@@ -405,13 +504,111 @@ function renderLobby() {
   show("lobby");
 }
 
-function renderGame() {
-  if (state.index >= QUESTION_COUNT || state.mode === "finished") {
-    renderResult();
+function renderSoloGame() {
+  if (solo.index >= QUESTION_COUNT) {
+    renderSoloResult();
     return;
   }
 
-  const q = currentQuestion();
+  const q = currentSoloQuestion();
+  const currentAnswer = solo.answers[solo.index];
+
+  $("countLabel").textContent = `${solo.index + 1} / ${QUESTION_COUNT}`;
+  $("questionText").textContent = `「${q.text}」\n\nこの発言をしたのは誰？`;
+  $("options").innerHTML = "";
+
+  q.options.forEach((op, i) => {
+    const btn = document.createElement("button");
+    btn.className = "option";
+    btn.textContent = op;
+
+    if (solo.phase === "reveal") {
+      if (i === q.answer) {
+        btn.classList.add("correct");
+      }
+
+      if (currentAnswer && i === currentAnswer.selected && i !== q.answer) {
+        btn.classList.add("wrong");
+      }
+
+      if (currentAnswer && i === currentAnswer.selected) {
+        btn.classList.add("selected");
+      }
+    }
+
+    btn.disabled = solo.phase !== "answer";
+
+    btn.onclick = () => answerSolo(i);
+
+    $("options").appendChild(btn);
+  });
+
+  if (solo.phase === "answer") {
+    $("answerInfo").textContent = "選択肢を選んでください。";
+    $("nextBtn").classList.add("hidden");
+  } else {
+    if (currentAnswer.correct) {
+      $("answerInfo").textContent = "正解！ +1点";
+    } else {
+      $("answerInfo").textContent = `不正解。正解は ${q.answerName}`;
+    }
+    $("nextBtn").classList.remove("hidden");
+  }
+
+  $("scores").innerHTML = `
+    <div class="row">
+      <span>${escapeHtml(playerName)}</span>
+      <span>${solo.score}点</span>
+    </div>
+  `;
+
+  show("game");
+}
+
+function answerSolo(selected) {
+  if (solo.phase !== "answer") return;
+
+  const q = currentSoloQuestion();
+  const correct = selected === q.answer;
+
+  if (correct) {
+    solo.score += 1;
+  }
+
+  solo.answers[solo.index] = {
+    qid: solo.qids[solo.index].qid,
+    text: q.text,
+    correctName: q.answerName,
+    selectedName: q.options[selected],
+    selected: selected,
+    correct: correct
+  };
+
+  solo.phase = "reveal";
+  $("timeLabel").textContent = "0.0";
+  renderSoloGame();
+}
+
+function nextSolo() {
+  solo.index += 1;
+
+  if (solo.index >= QUESTION_COUNT) {
+    renderSoloResult();
+    return;
+  }
+
+  solo.phase = "answer";
+  solo.startedAt = Date.now();
+  renderSoloGame();
+}
+
+function renderBattleGame() {
+  if (state.index >= QUESTION_COUNT || state.mode === "finished") {
+    renderBattleResult();
+    return;
+  }
+
+  const q = currentBattleQuestion();
 
   if (!q) {
     $("answerInfo").textContent = "問題データの取得に失敗しました。";
@@ -439,15 +636,25 @@ function renderGame() {
       btn.classList.add("wrong");
     }
 
+    if (myAnswer && i === myAnswer.selected) {
+      btn.classList.add("selected");
+    }
+
     btn.disabled = state.phase !== "answer" || !!myAnswer;
 
-    btn.onclick = () => answer(i);
+    btn.onclick = () => answerBattle(i);
 
     $("options").appendChild(btn);
   });
 
   if (state.phase === "answer") {
-    $("answerInfo").textContent = myAnswer ? "回答済みです。" : "選択肢を選んでください。";
+    $("nextBtn").classList.add("hidden");
+
+    if (myAnswer) {
+      $("answerInfo").textContent = "回答済みです。他の参加者を待っています。";
+    } else {
+      $("answerInfo").textContent = "選択肢を選んでください。";
+    }
   } else {
     if (!myAnswer) {
       $("answerInfo").textContent = `未回答。正解は ${q.answerName}`;
@@ -456,13 +663,19 @@ function renderGame() {
     } else {
       $("answerInfo").textContent = `不正解。正解は ${q.answerName}`;
     }
+
+    if (isHost()) {
+      $("nextBtn").classList.remove("hidden");
+    } else {
+      $("nextBtn").classList.add("hidden");
+    }
   }
 
-  renderScores();
+  renderBattleScores();
   show("game");
 }
 
-function renderScores() {
+function renderBattleScores() {
   $("scores").innerHTML = "";
 
   Object.values(players)
@@ -478,59 +691,107 @@ function renderScores() {
     });
 }
 
-function renderResult() {
-  $("resultBoard").innerHTML = "";
-
-  Object.values(players)
-    .sort((a, b) => scoreOf(b.id) - scoreOf(a.id))
-    .forEach((p, i) => {
-      const div = document.createElement("div");
-      div.className = "row";
-      div.innerHTML = `
-        <span>${i + 1}位 ${escapeHtml(p.name)}</span>
-        <span>${scoreOf(p.id)}点</span>
-      `;
-      $("resultBoard").appendChild(div);
-    });
-
-  show("result");
-}
-
-function answer(selected) {
+function answerBattle(selected) {
   if (state.phase !== "answer") return;
   if (state.answers?.[playerId]) return;
 
-  const q = currentQuestion();
-
-  if (!q) return;
-
+  const q = currentBattleQuestion();
   const correct = selected === q.answer;
 
   publishEvent({
     type: "answer",
     index: state.index,
     selected: selected,
+    selectedName: q.options[selected],
     correct: correct
   });
 
   state.answers[playerId] = {
     selected: selected,
+    selectedName: q.options[selected],
     correct: correct
   };
 
-  renderGame();
+  renderBattleGame();
 }
 
-function startGame() {
+function allBattlePlayersAnswered() {
+  const ids = Object.keys(state.scores || {});
+  if (ids.length === 0) return false;
+
+  return ids.every(id => state.answers && state.answers[id]);
+}
+
+function recordCurrentBattleResult() {
+  const q = currentBattleQuestion();
+
+  const answersCopy = {};
+  Object.keys(state.scores || {}).forEach(id => {
+    const a = state.answers?.[id];
+    answersCopy[id] = a ? {
+      selected: a.selected,
+      selectedName: a.selectedName,
+      correct: a.correct
+    } : {
+      selected: null,
+      selectedName: null,
+      correct: false
+    };
+  });
+
+  state.history[state.index] = {
+    qid: state.rounds[state.index].qid,
+    text: q.text,
+    correctName: q.answerName,
+    answers: answersCopy
+  };
+}
+
+function revealBattleQuestion() {
+  if (!isHost()) return;
+  if (state.mode !== "playing") return;
+  if (state.phase !== "answer") return;
+
+  recordCurrentBattleResult();
+
+  state.phase = "reveal";
+  state.startedAt = Date.now();
+
+  publishState();
+  renderBattleGame();
+}
+
+function nextBattle() {
+  if (!isHost()) return;
+
+  if (state.index + 1 >= QUESTION_COUNT) {
+    state.mode = "finished";
+    state.phase = "finished";
+    publishState();
+    renderBattleResult();
+    return;
+  }
+
+  state.index += 1;
+  state.phase = "answer";
+  state.startedAt = Date.now();
+  state.answers = {};
+
+  publishState();
+  renderBattleGame();
+}
+
+function startBattle() {
   state = {
     mode: "playing",
     hostId: playerId,
-    qids: chooseQuestions(),
+    rounds: makeRounds(),
     index: 0,
     phase: "answer",
     startedAt: Date.now(),
     answers: {},
-    scores: {}
+    scores: {},
+    history: []
   };
 
   Object.keys(players).forEach(id => {
@@ -538,62 +799,91 @@ function startGame() {
   });
 
   publishState();
-  renderGame();
+  renderBattleGame();
 }
 
 function resetRoom() {
+  Object.keys(players).forEach(id => {
+    publishEmpty(`${playerTopic}/${id}`);
+  });
+
+  players = {};
+
   state = {
     mode: "lobby",
     hostId: null,
-    qids: [],
+    rounds: [],
     index: 0,
     phase: "lobby",
     startedAt: 0,
     answers: {},
-    scores: {}
+    scores: {},
+    history: []
   };
 
   publishState();
+
+  players[playerId] = {
+    id: playerId,
+    name: playerName,
+    joinedAt: Date.now()
+  };
+
+  publishPlayer();
   renderLobby();
 }
 
 function tick() {
-  if (state.mode !== "playing") return;
+  if (mode === "solo") {
+    if (solo.phase !== "answer") return;
+    if (solo.index >= QUESTION_COUNT) return;
 
-  const now = Date.now();
-  const elapsed = (now - state.startedAt) / 1000;
-
-  if (state.phase === "answer") {
+    const elapsed = (Date.now() - solo.startedAt) / 1000;
     const remain = Math.max(0, TIME_LIMIT - elapsed);
+
     $("timeLabel").textContent = remain.toFixed(1);
 
-    if (isHost() && remain <= 0) {
-      state.phase = "reveal";
-      state.startedAt = Date.now();
-      publishState();
-      renderGame();
+    if (remain <= 0) {
+      const q = currentSoloQuestion();
+
+      solo.answers[solo.index] = {
+        qid: solo.qids[solo.index].qid,
+        text: q.text,
+        correctName: q.answerName,
+        selectedName: null,
+        selected: null,
+        correct: false
+      };
+
+      solo.phase = "reveal";
+      renderSoloGame();
     }
+
+    return;
   }
 
-  if (state.phase === "reveal") {
-    const revealElapsed = (now - state.startedAt) / 1000;
-    const remain = Math.max(0, SHOW_ANSWER_TIME - revealElapsed);
-    $("timeLabel").textContent = remain.toFixed(1);
+  if (mode === "battle") {
+    if (state.mode !== "playing") return;
 
-    if (isHost() && remain <= 0) {
-      if (state.index + 1 >= QUESTION_COUNT) {
-        state.mode = "finished";
-        state.phase = "finished";
-        publishState();
-        renderResult();
-      } else {
-        state.index++;
-        state.phase = "answer";
-        state.startedAt = Date.now();
-        state.answers = {};
-        publishState();
-        renderGame();
+    const elapsed = (Date.now() - state.startedAt) / 1000;
+
+    if (state.phase === "answer") {
+      const remain = Math.max(0, TIME_LIMIT - elapsed);
+      $("timeLabel").textContent = remain.toFixed(1);
+
+      if (isHost() && allBattlePlayersAnswered()) {
+        revealBattleQuestion();
+        return;
       }
+
+      if (isHost() && remain <= 0) {
+        revealBattleQuestion();
+        return;
+      }
+    }
+
+    if (state.phase === "reveal") {
+      $("timeLabel").textContent = "0.0";
     }
   }
 }
@@ -608,6 +898,7 @@ function handleEvent(ev) {
 
   state.answers[ev.from] = {
     selected: ev.selected,
+    selectedName: ev.selectedName,
     correct: ev.correct
   };
 
@@ -616,7 +907,11 @@ function handleEvent(ev) {
   }
 
   publishState();
-  renderGame();
+  renderBattleGame();
+
+  if (allBattlePlayersAnswered()) {
+    revealBattleQuestion();
+  }
 }
 
 function handleState(s) {
@@ -627,9 +922,9 @@ function handleState(s) {
   if (state.mode === "lobby") {
     renderLobby();
   } else if (state.mode === "playing") {
-    renderGame();
+    renderBattleGame();
   } else if (state.mode === "finished") {
-    renderResult();
+    renderBattleResult();
   }
 }
 
@@ -641,21 +936,115 @@ function handlePlayer(data) {
   if (state.mode === "lobby") {
     renderLobby();
   } else {
-    renderScores();
+    renderBattleScores();
   }
 }
 
+function renderSoloResult() {
+  $("resultBoard").innerHTML = `
+    <div class="row">
+      <span>${escapeHtml(playerName)}</span>
+      <span>${solo.score} / ${QUESTION_COUNT} 点</span>
+    </div>
+  `;
+
+  $("reviewBoard").innerHTML = "";
+
+  solo.answers.forEach((r, i) => {
+    const div = document.createElement("div");
+    div.className = "result-item";
+
+    const selected = r.selectedName === null ? "未回答" : escapeHtml(r.selectedName);
+    const mark = r.correct ? "○" : "×";
+    const markClass = r.correct ? "correct-text" : "wrong-text";
+
+    div.innerHTML = `
+      <div class="result-question">
+        Q${i + 1}. 「${escapeHtml(r.text)}」
+      </div>
+      <div>正解: <b>${escapeHtml(r.correctName)}</b></div>
+      <div>あなたの回答: <span class="${markClass}">${selected} ${mark}</span></div>
+    `;
+
+    $("reviewBoard").appendChild(div);
+  });
+
+  show("result");
+}
+
+function renderBattleResult() {
+  $("resultBoard").innerHTML = "";
+
+  Object.values(players)
+    .sort((a, b) => scoreOf(b.id) - scoreOf(a.id))
+    .forEach((p, i) => {
+      const div = document.createElement("div");
+      div.className = "row";
+      div.innerHTML = `
+        <span>${i + 1}位 ${escapeHtml(p.name)}</span>
+        <span>${scoreOf(p.id)}点</span>
+      `;
+      $("resultBoard").appendChild(div);
+    });
+
+  $("reviewBoard").innerHTML = "";
+
+  state.history.forEach((r, i) => {
+    const div = document.createElement("div");
+    div.className = "result-item";
+
+    let html = `
+      <div class="result-question">
+        Q${i + 1}. 「${escapeHtml(r.text)}」
+      </div>
+      <div>正解: <b>${escapeHtml(r.correctName)}</b></div>
+    `;
+
+    Object.values(players)
+      .sort((a, b) => (a.joinedAt ?? 0) - (b.joinedAt ?? 0))
+      .forEach(p => {
+        const ans = r.answers?.[p.id];
+        const selected = ans && ans.selectedName !== null ? escapeHtml(ans.selectedName) : "未回答";
+        const correct = ans?.correct ?? false;
+        const mark = correct ? "○" : "×";
+        const markClass = correct ? "correct-text" : "wrong-text";
+
+        html += `
+          <div>
+            ${escapeHtml(p.name)}:
+            <span class="${markClass}">${selected} ${mark}</span>
+          </div>
+        `;
+      });
+
+    div.innerHTML = html;
+    $("reviewBoard").appendChild(div);
+  });
+
+  show("result");
+}
+
+$("soloModeBtn").onclick = () => {
+  mode = "solo";
+  $("soloModeBtn").classList.add("selected");
+  $("battleModeBtn").classList.remove("selected");
+  $("roomInput").classList.add("hidden");
+  $("joinBtn").textContent = "開始";
+};
+
+$("battleModeBtn").onclick = () => {
+  mode = "battle";
+  $("battleModeBtn").classList.add("selected");
+  $("soloModeBtn").classList.remove("selected");
+  $("roomInput").classList.remove("hidden");
+  $("joinBtn").textContent = "入室";
+};
+
 $("joinBtn").onclick = async () => {
   playerName = $("nameInput").value.trim();
-  roomId = sanitizeRoom($("roomInput").value);
 
   if (!playerName) {
     alert("名前を入力してください");
-    return;
-  }
-
-  if (!roomId) {
-    alert("合言葉を入力してください");
     return;
   }
 
@@ -667,7 +1056,33 @@ $("joinBtn").onclick = async () => {
     return;
   }
 
-  baseTopic = `chat-quiz-simple/${roomId}`;
+  if (mode === "solo") {
+    solo = {
+      qids: makeRounds(),
+      index: 0,
+      phase: "answer",
+      startedAt: Date.now(),
+      score: 0,
+      answers: []
+    };
+
+    if (!tickStarted) {
+      tickStarted = true;
+      setInterval(tick, 100);
+    }
+
+    renderSoloGame();
+    return;
+  }
+
+  roomId = sanitizeRoom($("roomInput").value);
+
+  if (!roomId) {
+    alert("合言葉を入力してください");
+    return;
+  }
+
+  baseTopic = `chat-quiz-simple-v2/${roomId}`;
   stateTopic = `${baseTopic}/state`;
   eventTopic = `${baseTopic}/event`;
   playerTopic = `${baseTopic}/players`;
@@ -695,10 +1110,15 @@ $("joinBtn").onclick = async () => {
     publishPlayer();
     renderLobby();
 
-    setInterval(tick, 100);
+    if (!tickStarted) {
+      tickStarted = true;
+      setInterval(tick, 100);
+    }
   });
 
   client.on("message", (topic, payload) => {
+    if (payload.length === 0) return;
+
     let data;
 
     try {
@@ -721,8 +1141,16 @@ $("joinBtn").onclick = async () => {
   });
 };
 
-$("startBtn").onclick = startGame;
+$("startBtn").onclick = startBattle;
 $("resetBtn").onclick = resetRoom;
+
+$("nextBtn").onclick = () => {
+  if (mode === "solo") {
+    nextSolo();
+  } else {
+    nextBattle();
+  }
+};
 </script>
 </body>
 </html>
