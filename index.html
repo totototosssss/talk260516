@@ -115,30 +115,31 @@ button:disabled {
 }
 
 .game-layout {
-  display: flex;
-  flex-direction: column;
   min-height: calc(100dvh - 52px);
 }
 
 .question-area {
-  flex: 1;
-  padding-bottom: 12px;
+  padding-bottom: 290px;
 }
 
 .choice-area {
-  position: sticky;
+  position: fixed;
+  left: 50%;
   bottom: 0;
-  z-index: 30;
+  transform: translateX(-50%);
+  width: min(720px, 100%);
+  z-index: 50;
   background: white;
-  padding-top: 10px;
-  border-top: 1px solid #eee;
+  padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+  border-top: 1px solid #e5e5e5;
+  box-shadow: 0 -8px 24px rgba(0,0,0,0.08);
 }
 
 #options {
   display: grid;
   grid-template-columns: 1fr;
   gap: 8px;
-  max-height: 42dvh;
+  max-height: 220px;
   overflow-y: auto;
   padding-right: 2px;
 }
@@ -167,10 +168,7 @@ button:disabled {
 }
 
 #nextBtn {
-  position: sticky;
-  bottom: 8px;
-  z-index: 40;
-  margin-top: 12px;
+  margin-top: 10px;
   box-shadow: 0 6px 18px rgba(0,0,0,0.18);
 }
 
@@ -216,7 +214,7 @@ button:disabled {
   font-weight: bold;
 }
 
-@media (min-width: 600px) {
+@media (min-width: 700px) {
   .wrap {
     display: flex;
     align-items: center;
@@ -226,14 +224,22 @@ button:disabled {
     box-shadow: 0 6px 18px rgba(0,0,0,0.08);
   }
 
-  #options {
-    grid-template-columns: 1fr 1fr;
-    max-height: 45dvh;
+  .question-area {
+    padding-bottom: 0;
   }
 
   .choice-area {
     position: static;
+    transform: none;
+    width: 100%;
+    padding: 10px 0 0;
     border-top: none;
+    box-shadow: none;
+  }
+
+  #options {
+    grid-template-columns: 1fr 1fr;
+    max-height: 45dvh;
   }
 }
 </style>
@@ -246,7 +252,7 @@ button:disabled {
     <h1>発言クイズ</h1>
 
     <button class="mode selected" id="soloModeBtn">一人で遊ぶ</button>
-    <button class="mode" id="battleModeBtn">二人で対戦する</button>
+    <button class="mode" id="battleModeBtn">みんなで対戦する</button>
 
     <input id="nameInput" placeholder="名前">
     <input id="roomInput" placeholder="合言葉" class="hidden">
@@ -273,7 +279,8 @@ button:disabled {
     <button class="sub" id="resetBtn">リセット</button>
 
     <p class="small">
-      参加者がそろったら開始してください。開始した人が進行役になります。
+      参加者がそろったら開始してください。開始した人が進行役になります。<br>
+      2人以上でもそのまま遊べます。
     </p>
   </div>
 
@@ -383,6 +390,7 @@ let players = {};
 let state = {
   mode: "lobby",
   hostId: null,
+  participantIds: [],
   rounds: [],
   index: 0,
   phase: "lobby",
@@ -555,6 +563,20 @@ function publishEvent(data) {
   }, false);
 }
 
+function isParticipant(id) {
+  return Array.isArray(state.participantIds) && state.participantIds.includes(id);
+}
+
+function participantPlayers() {
+  const ids = state.participantIds && state.participantIds.length > 0
+    ? state.participantIds
+    : Object.keys(players);
+
+  return ids
+    .map(id => players[id])
+    .filter(Boolean);
+}
+
 function scoreOf(id) {
   return state.scores?.[id] ?? 0;
 }
@@ -568,7 +590,7 @@ function isHost() {
 }
 
 function rankPlayers() {
-  return Object.values(players).sort((a, b) => {
+  return participantPlayers().sort((a, b) => {
     const scoreDiff = scoreOf(b.id) - scoreOf(a.id);
     if (scoreDiff !== 0) return scoreDiff;
 
@@ -587,7 +609,7 @@ function renderLobby() {
       div.className = "row";
       div.innerHTML = `
         <span>${escapeHtml(p.name)}${p.id === playerId ? "（自分）" : ""}</span>
-        <span>${scoreOf(p.id)}点</span>
+        <span>待機中</span>
       `;
       $("players").appendChild(div);
     });
@@ -738,13 +760,20 @@ function renderBattleGame() {
       btn.classList.add("selected");
     }
 
-    btn.disabled = state.phase !== "answer" || !!myAnswer;
+    btn.disabled =
+      state.phase !== "answer" ||
+      !!myAnswer ||
+      !isParticipant(playerId);
+
     btn.onclick = () => answerBattle(i);
 
     $("options").appendChild(btn);
   });
 
-  if (state.phase === "answer") {
+  if (!isParticipant(playerId)) {
+    $("answerInfo").textContent = "このゲームは開始済みです。観戦中です。";
+    $("nextBtn").classList.add("hidden");
+  } else if (state.phase === "answer") {
     $("nextBtn").classList.add("hidden");
 
     if (myAnswer) {
@@ -788,6 +817,10 @@ function renderBattleScores() {
 }
 
 function applyBattleAnswer(id, answer) {
+  if (!isParticipant(id)) {
+    return;
+  }
+
   if (!state.answers) {
     state.answers = {};
   }
@@ -823,6 +856,7 @@ function applyBattleAnswer(id, answer) {
 function answerBattle(selected) {
   if (state.phase !== "answer") return;
   if (state.answers?.[playerId]) return;
+  if (!isParticipant(playerId)) return;
 
   const q = currentBattleQuestion();
   const correct = selected === q.answer;
@@ -860,7 +894,7 @@ function answerBattle(selected) {
 }
 
 function allBattlePlayersAnswered() {
-  const ids = Object.keys(state.scores || {});
+  const ids = state.participantIds || [];
 
   if (ids.length === 0) return false;
 
@@ -871,7 +905,7 @@ function recordCurrentBattleResult() {
   const q = currentBattleQuestion();
   const answersCopy = {};
 
-  Object.keys(state.scores || {}).forEach(id => {
+  (state.participantIds || []).forEach(id => {
     const a = state.answers?.[id];
 
     if (a && !a.pending) {
@@ -939,9 +973,19 @@ function nextBattle() {
 }
 
 function startBattle() {
+  const participantIds = Object.values(players)
+    .sort((a, b) => (a.joinedAt ?? 0) - (b.joinedAt ?? 0))
+    .map(p => p.id);
+
+  if (participantIds.length < 1) {
+    alert("参加者がいません");
+    return;
+  }
+
   state = {
     mode: "playing",
     hostId: playerId,
+    participantIds: participantIds,
     rounds: makeRounds(),
     index: 0,
     phase: "answer",
@@ -952,7 +996,7 @@ function startBattle() {
     history: []
   };
 
-  Object.keys(players).forEach(id => {
+  participantIds.forEach(id => {
     state.scores[id] = 0;
     state.times[id] = 0;
   });
@@ -971,6 +1015,7 @@ function resetRoom() {
   state = {
     mode: "lobby",
     hostId: null,
+    participantIds: [],
     rounds: [],
     index: 0,
     phase: "lobby",
@@ -1058,6 +1103,7 @@ function handleEvent(ev) {
   if (state.mode !== "playing") return;
   if (state.phase !== "answer") return;
   if (ev.index !== state.index) return;
+  if (!isParticipant(ev.from)) return;
 
   const answerMs = Math.min(ev.answerMs ?? TIME_LIMIT * 1000, TIME_LIMIT * 1000);
 
@@ -1083,6 +1129,10 @@ function handleState(s) {
 
   state = s;
 
+  if (!state.participantIds) {
+    state.participantIds = [];
+  }
+
   if (!state.times) {
     state.times = {};
   }
@@ -1099,6 +1149,7 @@ function handleState(s) {
     localPending &&
     state.mode === "playing" &&
     state.phase === "answer" &&
+    isParticipant(playerId) &&
     !state.answers[playerId]
   ) {
     state.answers[playerId] = localPending;
@@ -1120,7 +1171,7 @@ function handlePlayer(data) {
 
   if (state.mode === "lobby") {
     renderLobby();
-  } else {
+  } else if (state.mode === "playing" || state.mode === "finished") {
     renderBattleScores();
   }
 }
@@ -1186,7 +1237,7 @@ function renderBattleResult() {
       <div>正解: <b>${escapeHtml(r.correctName)}</b></div>
     `;
 
-    Object.values(players)
+    participantPlayers()
       .sort((a, b) => (a.joinedAt ?? 0) - (b.joinedAt ?? 0))
       .forEach(p => {
         const ans = r.answers?.[p.id];
@@ -1278,7 +1329,7 @@ $("joinBtn").onclick = async () => {
     return;
   }
 
-  baseTopic = `chat-quiz-simple-v5/${roomId}`;
+  baseTopic = `chat-quiz-simple-v6/${roomId}`;
   stateTopic = `${baseTopic}/state`;
   eventTopic = `${baseTopic}/event`;
   playerTopic = `${baseTopic}/players`;
