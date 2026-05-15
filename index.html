@@ -21,21 +21,20 @@ body {
   max-width: 720px;
   min-height: 100dvh;
   margin: 0 auto;
-  padding: 12px;
-  display: flex;
-  align-items: center;
+  padding: 10px;
 }
 
 .card {
   width: 100%;
+  min-height: calc(100dvh - 20px);
   background: white;
   border-radius: 18px;
-  padding: 18px;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+  padding: 16px;
+  box-shadow: none;
 }
 
 .hidden {
-  display: none;
+  display: none !important;
 }
 
 h1, h2, h3 {
@@ -49,7 +48,7 @@ p {
 input, button {
   width: 100%;
   font-size: 16px;
-  border-radius: 12px;
+  border-radius: 14px;
   padding: 13px;
   margin: 7px 0;
 }
@@ -86,21 +85,60 @@ button:disabled {
   color: white;
 }
 
+.top {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: white;
+  padding: 4px 0 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.badge {
+  background: #eee;
+  border-radius: 999px;
+  padding: 8px 12px;
+  font-size: 15px;
+  font-weight: bold;
+}
+
 .question {
   white-space: pre-wrap;
-  font-size: 18px;
+  font-size: 17px;
   line-height: 1.65;
   background: #f7f7f7;
   border-radius: 14px;
-  padding: 15px;
-  margin: 14px 0;
+  padding: 14px;
+  margin: 12px 0;
+}
+
+.game-layout {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100dvh - 52px);
+}
+
+.question-area {
+  flex: 1;
+  padding-bottom: 12px;
+}
+
+.choice-area {
+  position: sticky;
+  bottom: 0;
+  z-index: 30;
+  background: white;
+  padding-top: 10px;
+  border-top: 1px solid #eee;
 }
 
 #options {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 8px;
-  max-height: 46dvh;
+  max-height: 42dvh;
   overflow-y: auto;
   padding-right: 2px;
 }
@@ -108,13 +146,12 @@ button:disabled {
 .option {
   background: #f0f0f0;
   color: #222;
-  text-align: center;
-  min-height: 48px;
-  padding: 10px 8px;
-  font-size: 15px;
-  line-height: 1.25;
-  word-break: keep-all;
-  overflow-wrap: anywhere;
+  text-align: left;
+  min-height: 52px;
+  padding: 13px 14px;
+  font-size: 16px;
+  line-height: 1.35;
+  border-radius: 14px;
 }
 
 .option.selected {
@@ -129,19 +166,12 @@ button:disabled {
   background: #ffc9c9;
 }
 
-.top {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.badge {
-  background: #eee;
-  border-radius: 999px;
-  padding: 6px 10px;
-  font-size: 14px;
-  font-weight: bold;
+#nextBtn {
+  position: sticky;
+  bottom: 8px;
+  z-index: 40;
+  margin-top: 12px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.18);
 }
 
 .row {
@@ -186,56 +216,24 @@ button:disabled {
   font-weight: bold;
 }
 
-@media (max-width: 480px) {
+@media (min-width: 600px) {
   .wrap {
-    padding: 8px;
-    align-items: stretch;
+    display: flex;
+    align-items: center;
   }
 
   .card {
-    min-height: calc(100dvh - 16px);
-    border-radius: 16px;
-    padding: 14px;
-  }
-
-  h1 {
-    font-size: 23px;
-  }
-
-  h2 {
-    font-size: 19px;
-  }
-
-  .question {
-    font-size: 16px;
-    padding: 13px;
-    margin: 12px 0;
-  }
-
-  input, button {
-    font-size: 15px;
-    padding: 12px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.08);
   }
 
   #options {
     grid-template-columns: 1fr 1fr;
-    gap: 7px;
-    max-height: 43dvh;
+    max-height: 45dvh;
   }
 
-  .option {
-    font-size: 14px;
-    min-height: 44px;
-    padding: 9px 6px;
-  }
-
-  .top {
-    gap: 6px;
-  }
-
-  .badge {
-    font-size: 13px;
-    padding: 6px 8px;
+  .choice-area {
+    position: static;
+    border-top: none;
   }
 }
 </style>
@@ -257,7 +255,8 @@ button:disabled {
 
     <p class="small">
       一人用：回答後すぐ次の問題へ進めます。<br>
-      対戦用：同じ合言葉の人と同じ問題で勝負します。10問、各7秒です。
+      対戦用：同じ合言葉の人と同じ問題で勝負します。10問、各15秒です。<br>
+      同点の場合は、合計回答時間が短い方が勝ちです。
     </p>
 
     <p class="small" id="status"></p>
@@ -279,20 +278,28 @@ button:disabled {
   </div>
 
   <div class="card hidden" id="game">
-    <div class="top">
-      <div class="badge" id="countLabel">1 / 10</div>
-      <div class="badge">残り <span id="timeLabel">7.0</span> 秒</div>
+    <div class="game-layout">
+
+      <div class="question-area">
+        <div class="top">
+          <div class="badge" id="countLabel">1 / 10</div>
+          <div class="badge">残り <span id="timeLabel">15.0</span> 秒</div>
+        </div>
+
+        <div class="question" id="questionText"></div>
+
+        <p class="small" id="answerInfo"></p>
+
+        <h2 style="margin-top:18px;">スコア</h2>
+        <div id="scores"></div>
+      </div>
+
+      <div class="choice-area">
+        <div id="options"></div>
+        <button id="nextBtn" class="hidden">次の問題へ</button>
+      </div>
+
     </div>
-
-    <div class="question" id="questionText"></div>
-    <div id="options"></div>
-
-    <p class="small" id="answerInfo"></p>
-
-    <button id="nextBtn" class="hidden">次の問題へ</button>
-
-    <h2 style="margin-top:18px;">スコア</h2>
-    <div id="scores"></div>
   </div>
 
   <div class="card hidden" id="result">
@@ -314,7 +321,7 @@ const BROKER = "wss://broker.emqx.io:8084/mqtt";
 const QUIZ_FILE = "quiz_data.json";
 
 const QUESTION_COUNT = 10;
-const TIME_LIMIT = 7;
+const TIME_LIMIT = 15;
 
 const NAME_MAPPING = {
   "○高顔面中知能低身長": "管理人",
@@ -352,6 +359,7 @@ let solo = {
   phase: "answer",
   startedAt: 0,
   score: 0,
+  totalTimeMs: 0,
   answers: []
 };
 
@@ -381,6 +389,7 @@ let state = {
   startedAt: 0,
   answers: {},
   scores: {},
+  times: {},
   history: []
 };
 
@@ -434,6 +443,10 @@ function escapeHtml(s) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
+}
+
+function formatSec(ms) {
+  return (ms / 1000).toFixed(2);
 }
 
 async function loadQuiz() {
@@ -546,8 +559,21 @@ function scoreOf(id) {
   return state.scores?.[id] ?? 0;
 }
 
+function timeOf(id) {
+  return state.times?.[id] ?? 0;
+}
+
 function isHost() {
   return state.hostId === playerId;
+}
+
+function rankPlayers() {
+  return Object.values(players).sort((a, b) => {
+    const scoreDiff = scoreOf(b.id) - scoreOf(a.id);
+    if (scoreDiff !== 0) return scoreDiff;
+
+    return timeOf(a.id) - timeOf(b.id);
+  });
 }
 
 function renderLobby() {
@@ -612,9 +638,9 @@ function renderSoloGame() {
     $("nextBtn").classList.add("hidden");
   } else {
     if (currentAnswer.correct) {
-      $("answerInfo").textContent = "正解！ +1点";
+      $("answerInfo").textContent = `正解！ +1点 / ${formatSec(currentAnswer.answerMs)}秒`;
     } else {
-      $("answerInfo").textContent = `不正解。正解は ${q.answerName}`;
+      $("answerInfo").textContent = `不正解。正解は ${q.answerName} / ${formatSec(currentAnswer.answerMs)}秒`;
     }
 
     $("nextBtn").classList.remove("hidden");
@@ -623,7 +649,7 @@ function renderSoloGame() {
   $("scores").innerHTML = `
     <div class="row">
       <span>${escapeHtml(playerName)}</span>
-      <span>${solo.score}点</span>
+      <span>${solo.score}点 / ${formatSec(solo.totalTimeMs)}秒</span>
     </div>
   `;
 
@@ -635,10 +661,13 @@ function answerSolo(selected) {
 
   const q = currentSoloQuestion();
   const correct = selected === q.answer;
+  const answerMs = Math.min(Date.now() - solo.startedAt, TIME_LIMIT * 1000);
 
   if (correct) {
     solo.score += 1;
   }
+
+  solo.totalTimeMs += answerMs;
 
   solo.answers[solo.index] = {
     qid: solo.rounds[solo.index].qid,
@@ -646,7 +675,8 @@ function answerSolo(selected) {
     correctName: q.answerName,
     selectedName: q.options[selected],
     selected: selected,
-    correct: correct
+    correct: correct,
+    answerMs: answerMs
   };
 
   solo.phase = "reveal";
@@ -665,6 +695,7 @@ function nextSolo() {
 
   solo.phase = "answer";
   solo.startedAt = Date.now();
+  $("timeLabel").textContent = TIME_LIMIT.toFixed(1);
 
   renderSoloGame();
 }
@@ -717,7 +748,7 @@ function renderBattleGame() {
     $("nextBtn").classList.add("hidden");
 
     if (myAnswer) {
-      $("answerInfo").textContent = "回答済みです。他の参加者を待っています。";
+      $("answerInfo").textContent = `回答済みです。${formatSec(myAnswer.answerMs)}秒。他の参加者を待っています。`;
     } else {
       $("answerInfo").textContent = "選択肢を選んでください。";
     }
@@ -725,9 +756,9 @@ function renderBattleGame() {
     if (!myAnswer) {
       $("answerInfo").textContent = `未回答。正解は ${q.answerName}`;
     } else if (myAnswer.correct) {
-      $("answerInfo").textContent = "正解！ +1点";
+      $("answerInfo").textContent = `正解！ +1点 / ${formatSec(myAnswer.answerMs)}秒`;
     } else {
-      $("answerInfo").textContent = `不正解。正解は ${q.answerName}`;
+      $("answerInfo").textContent = `不正解。正解は ${q.answerName} / ${formatSec(myAnswer.answerMs)}秒`;
     }
 
     if (isHost()) {
@@ -744,17 +775,15 @@ function renderBattleGame() {
 function renderBattleScores() {
   $("scores").innerHTML = "";
 
-  Object.values(players)
-    .sort((a, b) => scoreOf(b.id) - scoreOf(a.id))
-    .forEach(p => {
-      const div = document.createElement("div");
-      div.className = "row";
-      div.innerHTML = `
-        <span>${escapeHtml(p.name)}${p.id === playerId ? "（自分）" : ""}</span>
-        <span>${scoreOf(p.id)}点 ${state.answers?.[p.id] ? "✓" : ""}</span>
-      `;
-      $("scores").appendChild(div);
-    });
+  rankPlayers().forEach(p => {
+    const div = document.createElement("div");
+    div.className = "row";
+    div.innerHTML = `
+      <span>${escapeHtml(p.name)}${p.id === playerId ? "（自分）" : ""}</span>
+      <span>${scoreOf(p.id)}点 / ${formatSec(timeOf(p.id))}秒 ${state.answers?.[p.id] ? "✓" : ""}</span>
+    `;
+    $("scores").appendChild(div);
+  });
 }
 
 function answerBattle(selected) {
@@ -763,19 +792,22 @@ function answerBattle(selected) {
 
   const q = currentBattleQuestion();
   const correct = selected === q.answer;
+  const answerMs = Math.min(Date.now() - state.startedAt, TIME_LIMIT * 1000);
 
   publishEvent({
     type: "answer",
     index: state.index,
     selected: selected,
     selectedName: q.options[selected],
-    correct: correct
+    correct: correct,
+    answerMs: answerMs
   });
 
   state.answers[playerId] = {
     selected: selected,
     selectedName: q.options[selected],
-    correct: correct
+    correct: correct,
+    answerMs: answerMs
   };
 
   renderBattleGame();
@@ -791,21 +823,28 @@ function allBattlePlayersAnswered() {
 
 function recordCurrentBattleResult() {
   const q = currentBattleQuestion();
-
   const answersCopy = {};
 
   Object.keys(state.scores || {}).forEach(id => {
     const a = state.answers?.[id];
 
-    answersCopy[id] = a ? {
-      selected: a.selected,
-      selectedName: a.selectedName,
-      correct: a.correct
-    } : {
-      selected: null,
-      selectedName: null,
-      correct: false
-    };
+    if (a) {
+      answersCopy[id] = {
+        selected: a.selected,
+        selectedName: a.selectedName,
+        correct: a.correct,
+        answerMs: a.answerMs ?? TIME_LIMIT * 1000
+      };
+    } else {
+      answersCopy[id] = {
+        selected: null,
+        selectedName: null,
+        correct: false,
+        answerMs: TIME_LIMIT * 1000
+      };
+
+      state.times[id] = (state.times[id] ?? 0) + TIME_LIMIT * 1000;
+    }
   });
 
   state.history[state.index] = {
@@ -847,6 +886,7 @@ function nextBattle() {
   state.phase = "answer";
   state.startedAt = Date.now();
   state.answers = {};
+  $("timeLabel").textContent = TIME_LIMIT.toFixed(1);
 
   publishState();
   renderBattleGame();
@@ -862,11 +902,13 @@ function startBattle() {
     startedAt: Date.now(),
     answers: {},
     scores: {},
+    times: {},
     history: []
   };
 
   Object.keys(players).forEach(id => {
     state.scores[id] = 0;
+    state.times[id] = 0;
   });
 
   publishState();
@@ -889,6 +931,7 @@ function resetRoom() {
     startedAt: 0,
     answers: {},
     scores: {},
+    times: {},
     history: []
   };
 
@@ -916,6 +959,9 @@ function tick() {
 
     if (remain <= 0) {
       const q = currentSoloQuestion();
+      const answerMs = TIME_LIMIT * 1000;
+
+      solo.totalTimeMs += answerMs;
 
       solo.answers[solo.index] = {
         qid: solo.rounds[solo.index].qid,
@@ -923,7 +969,8 @@ function tick() {
         correctName: q.answerName,
         selectedName: null,
         selected: null,
-        correct: false
+        correct: false,
+        answerMs: answerMs
       };
 
       solo.phase = "reveal";
@@ -967,15 +1014,20 @@ function handleEvent(ev) {
   if (ev.index !== state.index) return;
   if (state.answers[ev.from]) return;
 
+  const answerMs = Math.min(ev.answerMs ?? TIME_LIMIT * 1000, TIME_LIMIT * 1000);
+
   state.answers[ev.from] = {
     selected: ev.selected,
     selectedName: ev.selectedName,
-    correct: ev.correct
+    correct: ev.correct,
+    answerMs: answerMs
   };
 
   if (ev.correct) {
     state.scores[ev.from] = (state.scores[ev.from] ?? 0) + 1;
   }
+
+  state.times[ev.from] = (state.times[ev.from] ?? 0) + answerMs;
 
   publishState();
   renderBattleGame();
@@ -989,6 +1041,10 @@ function handleState(s) {
   if (!s || !s.mode) return;
 
   state = s;
+
+  if (!state.times) {
+    state.times = {};
+  }
 
   if (state.mode === "lobby") {
     renderLobby();
@@ -1015,7 +1071,7 @@ function renderSoloResult() {
   $("resultBoard").innerHTML = `
     <div class="row">
       <span>${escapeHtml(playerName)}</span>
-      <span>${solo.score} / ${QUESTION_COUNT} 点</span>
+      <span>${solo.score} / ${QUESTION_COUNT} 点 / ${formatSec(solo.totalTimeMs)}秒</span>
     </div>
   `;
 
@@ -1035,6 +1091,7 @@ function renderSoloResult() {
       </div>
       <div>正解: <b>${escapeHtml(r.correctName)}</b></div>
       <div>あなたの回答: <span class="${markClass}">${selected} ${mark}</span></div>
+      <div class="small">回答時間: ${formatSec(r.answerMs)}秒</div>
     `;
 
     $("reviewBoard").appendChild(div);
@@ -1046,19 +1103,17 @@ function renderSoloResult() {
 function renderBattleResult() {
   $("resultBoard").innerHTML = "";
 
-  Object.values(players)
-    .sort((a, b) => scoreOf(b.id) - scoreOf(a.id))
-    .forEach((p, i) => {
-      const div = document.createElement("div");
-      div.className = "row";
+  rankPlayers().forEach((p, i) => {
+    const div = document.createElement("div");
+    div.className = "row";
 
-      div.innerHTML = `
-        <span>${i + 1}位 ${escapeHtml(p.name)}</span>
-        <span>${scoreOf(p.id)}点</span>
-      `;
+    div.innerHTML = `
+      <span>${i + 1}位 ${escapeHtml(p.name)}</span>
+      <span>${scoreOf(p.id)}点 / ${formatSec(timeOf(p.id))}秒</span>
+    `;
 
-      $("resultBoard").appendChild(div);
-    });
+    $("resultBoard").appendChild(div);
+  });
 
   $("reviewBoard").innerHTML = "";
 
@@ -1081,11 +1136,13 @@ function renderBattleResult() {
         const correct = ans?.correct ?? false;
         const mark = correct ? "○" : "×";
         const markClass = correct ? "correct-text" : "wrong-text";
+        const sec = ans?.answerMs !== undefined ? formatSec(ans.answerMs) : formatSec(TIME_LIMIT * 1000);
 
         html += `
           <div>
             ${escapeHtml(p.name)}:
             <span class="${markClass}">${selected} ${mark}</span>
+            <span class="small"> / ${sec}秒</span>
           </div>
         `;
       });
@@ -1140,8 +1197,11 @@ $("joinBtn").onclick = async () => {
       phase: "answer",
       startedAt: Date.now(),
       score: 0,
+      totalTimeMs: 0,
       answers: []
     };
+
+    $("timeLabel").textContent = TIME_LIMIT.toFixed(1);
 
     if (!tickStarted) {
       tickStarted = true;
@@ -1160,7 +1220,7 @@ $("joinBtn").onclick = async () => {
     return;
   }
 
-  baseTopic = `chat-quiz-simple-v3/${roomId}`;
+  baseTopic = `chat-quiz-simple-v4/${roomId}`;
   stateTopic = `${baseTopic}/state`;
   eventTopic = `${baseTopic}/event`;
   playerTopic = `${baseTopic}/players`;
