@@ -89,7 +89,8 @@ button:disabled {
   background: #f0f0f0;
   color: #222;
   text-align: left;
-  min-height: 56px;
+  min-height: 48px;
+  padding: 11px 14px;
 }
 
 .option.correct {
@@ -118,13 +119,63 @@ button:disabled {
 .row {
   display: flex;
   justify-content: space-between;
+  gap: 12px;
   border-bottom: 1px solid #eee;
   padding: 9px 0;
+}
+
+.row span:first-child {
+  overflow-wrap: anywhere;
 }
 
 .small {
   color: #666;
   font-size: 13px;
+}
+
+#options {
+  max-height: 48dvh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+@media (max-width: 480px) {
+  .wrap {
+    padding: 10px;
+    align-items: stretch;
+  }
+
+  .card {
+    min-height: calc(100dvh - 20px);
+    border-radius: 16px;
+    padding: 16px;
+  }
+
+  h1 {
+    font-size: 24px;
+  }
+
+  h2 {
+    font-size: 20px;
+  }
+
+  .question {
+    font-size: 17px;
+    padding: 14px;
+  }
+
+  input, button {
+    font-size: 15px;
+  }
+
+  .option {
+    font-size: 15px;
+    min-height: 46px;
+  }
+
+  #options {
+    max-height: 45dvh;
+  }
 }
 </style>
 </head>
@@ -218,7 +269,9 @@ function $(id) {
 }
 
 function show(id) {
-  ["login", "lobby", "game", "result"].forEach(x => $(x).classList.add("hidden"));
+  ["login", "lobby", "game", "result"].forEach(x => {
+    $(x).classList.add("hidden");
+  });
   $(id).classList.remove("hidden");
 }
 
@@ -230,12 +283,27 @@ function shuffle(a) {
 }
 
 function sanitizeRoom(s) {
-  return s.trim().replace(/[^\w\-ぁ-んァ-ヶ一-龠]/g, "_").slice(0, 64);
+  return s
+    .trim()
+    .replace(/[^\w\-ぁ-んァ-ヶ一-龠]/g, "_")
+    .slice(0, 64);
 }
 
-function publish(topic, data, retain=false) {
+function escapeHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+function publish(topic, data, retain = false) {
   if (!client || !client.connected) return;
-  client.publish(topic, JSON.stringify(data), { qos: 1, retain });
+  client.publish(topic, JSON.stringify(data), {
+    qos: 1,
+    retain: retain
+  });
 }
 
 function publishState() {
@@ -255,12 +323,15 @@ function publishEvent(data) {
     ...data,
     from: playerId,
     time: Date.now()
-  });
+  }, false);
 }
 
 async function loadQuiz() {
   const res = await fetch(QUIZ_FILE, { cache: "no-store" });
-  if (!res.ok) throw new Error("quiz_data.json を読み込めません");
+
+  if (!res.ok) {
+    throw new Error("quiz_data.json を読み込めません");
+  }
 
   quizRaw = await res.json();
 
@@ -272,10 +343,10 @@ async function loadQuiz() {
     x.text.trim()
   );
 
-  const names = [...new Set(quizRaw.map(x => x.name))];
+  const names = [...new Set(quizRaw.map(x => x.name.trim()))];
 
-  if (names.length < 4) {
-    throw new Error("選択肢生成には最低4人必要です");
+  if (names.length < 2) {
+    throw new Error("選択肢生成には最低2人必要です");
   }
 
   if (quizRaw.length < QUESTION_COUNT) {
@@ -283,17 +354,15 @@ async function loadQuiz() {
   }
 
   quiz = quizRaw.map(item => {
-    const correct = item.name;
-    const wrongs = names.filter(n => n !== correct);
-    shuffle(wrongs);
+    const correct = item.name.trim();
 
-    const options = [correct, ...wrongs.slice(0, 3)];
+    const options = [...names];
     shuffle(options);
 
     return {
-      text: item.text,
+      text: item.text.trim(),
       answerName: correct,
-      options,
+      options: options,
       answer: options.indexOf(correct)
     };
   });
@@ -327,7 +396,7 @@ function renderLobby() {
       const div = document.createElement("div");
       div.className = "row";
       div.innerHTML = `
-        <span>${p.name}${p.id === playerId ? "（自分）" : ""}</span>
+        <span>${escapeHtml(p.name)}${p.id === playerId ? "（自分）" : ""}</span>
         <span>${scoreOf(p.id)}点</span>
       `;
       $("players").appendChild(div);
@@ -343,6 +412,12 @@ function renderGame() {
   }
 
   const q = currentQuestion();
+
+  if (!q) {
+    $("answerInfo").textContent = "問題データの取得に失敗しました。";
+    return;
+  }
+
   const myAnswer = state.answers?.[playerId];
 
   $("countLabel").textContent = `${state.index + 1} / ${QUESTION_COUNT}`;
@@ -396,7 +471,7 @@ function renderScores() {
       const div = document.createElement("div");
       div.className = "row";
       div.innerHTML = `
-        <span>${p.name}${p.id === playerId ? "（自分）" : ""}</span>
+        <span>${escapeHtml(p.name)}${p.id === playerId ? "（自分）" : ""}</span>
         <span>${scoreOf(p.id)}点 ${state.answers?.[p.id] ? "✓" : ""}</span>
       `;
       $("scores").appendChild(div);
@@ -412,7 +487,7 @@ function renderResult() {
       const div = document.createElement("div");
       div.className = "row";
       div.innerHTML = `
-        <span>${i + 1}位 ${p.name}</span>
+        <span>${i + 1}位 ${escapeHtml(p.name)}</span>
         <span>${scoreOf(p.id)}点</span>
       `;
       $("resultBoard").appendChild(div);
@@ -426,16 +501,23 @@ function answer(selected) {
   if (state.answers?.[playerId]) return;
 
   const q = currentQuestion();
+
+  if (!q) return;
+
   const correct = selected === q.answer;
 
   publishEvent({
     type: "answer",
     index: state.index,
-    selected,
-    correct
+    selected: selected,
+    correct: correct
   });
 
-  state.answers[playerId] = { selected, correct };
+  state.answers[playerId] = {
+    selected: selected,
+    correct: correct
+  };
+
   renderGame();
 }
 
@@ -494,7 +576,8 @@ function tick() {
   }
 
   if (state.phase === "reveal") {
-    const remain = Math.max(0, SHOW_ANSWER_TIME - elapsed);
+    const revealElapsed = (now - state.startedAt) / 1000;
+    const remain = Math.max(0, SHOW_ANSWER_TIME - revealElapsed);
     $("timeLabel").textContent = remain.toFixed(1);
 
     if (isHost() && remain <= 0) {
@@ -555,8 +638,11 @@ function handlePlayer(data) {
 
   players[data.id] = data;
 
-  if (state.mode === "lobby") renderLobby();
-  else renderScores();
+  if (state.mode === "lobby") {
+    renderLobby();
+  } else {
+    renderScores();
+  }
 }
 
 $("joinBtn").onclick = async () => {
@@ -596,9 +682,9 @@ $("joinBtn").onclick = async () => {
   });
 
   client.on("connect", () => {
-    client.subscribe(stateTopic);
-    client.subscribe(eventTopic);
-    client.subscribe(`${playerTopic}/+`);
+    client.subscribe(stateTopic, { qos: 1 });
+    client.subscribe(eventTopic, { qos: 1 });
+    client.subscribe(`${playerTopic}/+`, { qos: 1 });
 
     players[playerId] = {
       id: playerId,
