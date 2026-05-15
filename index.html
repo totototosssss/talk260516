@@ -748,7 +748,8 @@ function renderBattleGame() {
     $("nextBtn").classList.add("hidden");
 
     if (myAnswer) {
-      $("answerInfo").textContent = `回答済みです。${formatSec(myAnswer.answerMs)}秒。他の参加者を待っています。`;
+      const pendingText = myAnswer.pending ? "送信済み" : "回答済み";
+      $("answerInfo").textContent = `${pendingText}です。${formatSec(myAnswer.answerMs)}秒。他の参加者を待っています。`;
     } else {
       $("answerInfo").textContent = "選択肢を選んでください。";
     }
@@ -786,6 +787,39 @@ function renderBattleScores() {
   });
 }
 
+function applyBattleAnswer(id, answer) {
+  if (!state.answers) {
+    state.answers = {};
+  }
+
+  if (!state.scores) {
+    state.scores = {};
+  }
+
+  if (!state.times) {
+    state.times = {};
+  }
+
+  if (state.answers[id] && !state.answers[id].pending) {
+    return;
+  }
+
+  const answerMs = Math.min(answer.answerMs ?? TIME_LIMIT * 1000, TIME_LIMIT * 1000);
+
+  state.answers[id] = {
+    selected: answer.selected,
+    selectedName: answer.selectedName,
+    correct: answer.correct,
+    answerMs: answerMs
+  };
+
+  if (answer.correct) {
+    state.scores[id] = (state.scores[id] ?? 0) + 1;
+  }
+
+  state.times[id] = (state.times[id] ?? 0) + answerMs;
+}
+
 function answerBattle(selected) {
   if (state.phase !== "answer") return;
   if (state.answers?.[playerId]) return;
@@ -803,12 +837,24 @@ function answerBattle(selected) {
     answerMs: answerMs
   });
 
-  state.answers[playerId] = {
-    selected: selected,
-    selectedName: q.options[selected],
-    correct: correct,
-    answerMs: answerMs
-  };
+  if (isHost()) {
+    applyBattleAnswer(playerId, {
+      selected: selected,
+      selectedName: q.options[selected],
+      correct: correct,
+      answerMs: answerMs
+    });
+
+    publishState();
+  } else {
+    state.answers[playerId] = {
+      selected: selected,
+      selectedName: q.options[selected],
+      correct: correct,
+      answerMs: answerMs,
+      pending: true
+    };
+  }
 
   renderBattleGame();
 }
@@ -818,7 +864,7 @@ function allBattlePlayersAnswered() {
 
   if (ids.length === 0) return false;
 
-  return ids.every(id => state.answers && state.answers[id]);
+  return ids.every(id => state.answers && state.answers[id] && !state.answers[id].pending);
 }
 
 function recordCurrentBattleResult() {
@@ -828,7 +874,7 @@ function recordCurrentBattleResult() {
   Object.keys(state.scores || {}).forEach(id => {
     const a = state.answers?.[id];
 
-    if (a) {
+    if (a && !a.pending) {
       answersCopy[id] = {
         selected: a.selected,
         selectedName: a.selectedName,
@@ -1012,22 +1058,15 @@ function handleEvent(ev) {
   if (state.mode !== "playing") return;
   if (state.phase !== "answer") return;
   if (ev.index !== state.index) return;
-  if (state.answers[ev.from]) return;
 
   const answerMs = Math.min(ev.answerMs ?? TIME_LIMIT * 1000, TIME_LIMIT * 1000);
 
-  state.answers[ev.from] = {
+  applyBattleAnswer(ev.from, {
     selected: ev.selected,
     selectedName: ev.selectedName,
     correct: ev.correct,
     answerMs: answerMs
-  };
-
-  if (ev.correct) {
-    state.scores[ev.from] = (state.scores[ev.from] ?? 0) + 1;
-  }
-
-  state.times[ev.from] = (state.times[ev.from] ?? 0) + answerMs;
+  });
 
   publishState();
   renderBattleGame();
@@ -1040,10 +1079,29 @@ function handleEvent(ev) {
 function handleState(s) {
   if (!s || !s.mode) return;
 
+  const localPending = state.answers?.[playerId]?.pending ? state.answers[playerId] : null;
+
   state = s;
 
   if (!state.times) {
     state.times = {};
+  }
+
+  if (!state.scores) {
+    state.scores = {};
+  }
+
+  if (!state.answers) {
+    state.answers = {};
+  }
+
+  if (
+    localPending &&
+    state.mode === "playing" &&
+    state.phase === "answer" &&
+    !state.answers[playerId]
+  ) {
+    state.answers[playerId] = localPending;
   }
 
   if (state.mode === "lobby") {
@@ -1220,7 +1278,7 @@ $("joinBtn").onclick = async () => {
     return;
   }
 
-  baseTopic = `chat-quiz-simple-v4/${roomId}`;
+  baseTopic = `chat-quiz-simple-v5/${roomId}`;
   stateTopic = `${baseTopic}/state`;
   eventTopic = `${baseTopic}/event`;
   playerTopic = `${baseTopic}/players`;
